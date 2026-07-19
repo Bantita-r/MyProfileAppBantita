@@ -1,5 +1,5 @@
 import { Alert, Image, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Product, ScreenName, vantaCategories, vantaInventory } from './_data';
+import { Product, ScreenName, vantaCategories } from './_data';
 import { styles } from './_styles';
 
 // ================= LOGIN =================
@@ -127,7 +127,7 @@ export function HomeDashboard({ onViewMore }: HomeDashboardProps) {
 }
 
 // ================= ADD PRODUCT =================
-export function AddProductScreen() {
+export  function AddProductScreen() {
   return (
     <View style={{ paddingBottom: 20 }}>
       <Text style={styles.sectionTitleLarge}>Add New Product</Text>
@@ -150,11 +150,12 @@ export function AddProductScreen() {
 
 // ================= PRODUCTS LIST =================
 interface ProductsScreenProps {
+  products: any[];
   onSelectProduct: (product: Product) => void;
   onAddProduct: () => void;
 }
 
-export function ProductsScreen({ onSelectProduct, onAddProduct }: ProductsScreenProps) {
+export function ProductsScreen({ products,onSelectProduct, onAddProduct }: ProductsScreenProps) {
   return (
     <View style={{ paddingBottom: 20 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -163,17 +164,15 @@ export function ProductsScreen({ onSelectProduct, onAddProduct }: ProductsScreen
           <Text style={styles.actionBtnText}>+ Add Product</Text>
         </TouchableOpacity>
       </View>
-      {vantaInventory.map((item) => (
-        <TouchableOpacity key={item.id} style={styles.productCardLarge} onPress={() => onSelectProduct(item)}>
-          <Image source={{ uri: item.imageUrl }} style={styles.productImageLarge} resizeMode="cover" />
-          <View style={styles.productInfoLarge}>
-            <Text style={styles.productNameTextLarge}>{item.name}</Text>
-            <Text style={styles.productMetaTextLarge}>Size: {item.size}</Text>
-            <Text style={styles.productMetaTextLarge}>Category: {item.category}</Text>
-          </View>
-          <Text style={styles.priceTagLarge}>{item.price}</Text>
-        </TouchableOpacity>
-      ))}
+      {products.map((item) => (
+        <View key={item.id} style={styles.productCard}>
+    <Image source={{ uri: item.image_url }} style={styles.productImage} />
+    <Text style={styles.productName}>{item.name}</Text>
+    <Text style={styles.productPrice}>Price: {item.price}</Text>
+    <Text style={styles.productSize}>Size: {item.size}</Text>
+    <Text style={styles.productStock}>{item.stock} in stock</Text>
+  </View>
+))}
     </View>
   );
 }

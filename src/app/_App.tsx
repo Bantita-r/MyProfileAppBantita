@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaView, ScrollView, StatusBar, View } from 'react-native';
 import { BottomTabBar, Header } from './_components';
 import { Product, ScreenName, vantaInventory } from './_data';
@@ -14,6 +14,8 @@ import {
 } from './_screens';
 import { styles } from './_styles';
 
+  
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenName>('Home');
@@ -21,7 +23,15 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState<Product>(vantaInventory[0]);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-
+  const [products, setProducts] = useState<any[]>([]);
+ useEffect(() => {
+    async function loadProducts() {
+      const response = await fetch('https://raw.githubusercontent.com/Bantita-r/MyProfileAppBantita/refs/heads/main/products.json?t=' + Date.now());
+      const data = await response.json();
+      setProducts(data);
+    }
+    void loadProducts();
+  }, []);
   // สเตตัสข้อมูลโปรไฟล์ส่วนตัว (Personal Settings) เนื้อหาอิงตาม Uizard รูป 2
   const [profileName, setProfileName] = useState('Bantita');
   const [profileEmail, setProfileEmail] = useState('Bantita.rat@ku.ac.th');
@@ -100,7 +110,9 @@ export default function App() {
           {currentScreen === 'Add' && <AddProductScreen />}
 
           {currentScreen === 'Products' && (
-            <ProductsScreen onSelectProduct={handleSelectProduct} onAddProduct={() => navigateTo('Add')} />
+            <ProductsScreen
+            products={products} 
+            onSelectProduct={handleSelectProduct} onAddProduct={() => navigateTo('Add')} />
           )}
 
           {currentScreen === 'Categories' && <CategoriesScreen onSelectCategory={() => navigateTo('Products')} />}

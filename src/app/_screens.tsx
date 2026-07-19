@@ -184,7 +184,7 @@ export function ProductsScreen({ products,onSelectProduct, onAddProduct }: Produ
   >
     <Image 
       source={{ uri: item.image_url }} 
-  style={{ width: 200, height: 200 }} 
+      style={{ width: 80, height: 80, borderRadius: 10 }} 
     />
     <View style={{ marginLeft: 15, flex: 1 }}>
       <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{item.name}</Text>

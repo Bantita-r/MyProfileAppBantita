@@ -1,6 +1,35 @@
 [
-  { "id": "1", "name": "VANTA Denim Dress", "price": "฿790", "stock": 12, "category": "Dresses", "status": "Active", "size": "S, M, L", "imageUrl": "https://i.pinimg.com/736x/e4/33/9e/e4339e0d1429c4e026e90fad88ed978e.jpg" },
-  { "id": "2", "name": "VANTA Stripe Maxi", "price": "฿650", "stock": 10, "category": "Dresses", "status": "Active", "size": "M, L", "imageUrl": "https://i.pinimg.com/1200x/c0/18/71/c01871e6da2cacfeafe01662046fddda.jpg" },
-  { "id": "3", "name": "Pleated Minimal Dress", "price": "฿590", "stock": 1, "category": "Dresses", "status": "Low in stock", "size": "Free Size", "imageUrl": "https://i.pinimg.com/1200x/ef/2c/4a/ef2c4a38ffb2519f14845e247d9439a4.jpg" },
-  { "id": "4", "name": "Smocked Crop Top", "price": "฿390", "stock": 22, "category": "Tops", "status": "Active", "size": "S, M", "imageUrl": "https://i.pinimg.com/736x/a4/81/c1/a481c1179080938392d459285b7ee8dc.jpg" }
+  {
+    "id": "1",
+    "name": "VANTA Denim Dress",
+    "stock": 12,
+    "stock_text": "12 in stock",
+    "category": "Dresses",
+    "location_count": 3,
+    "location_text": "3 stores",
+    "badge_status": "Active",
+    "image_url": "https://i.pinimg.com/736x/e4/33/9e/e4339e0d1429c4e026e90fad88ed978e.jpg"
+  },
+  {
+    "id": "2",
+    "name": "VANTA Stripe Maxi",
+    "stock": 10,
+    "stock_text": "10 in stock",
+    "category": "Dresses",
+    "location_count": 4,
+    "location_text": "4 stores",
+    "badge_status": "Active",
+    "image_url": "https://i.pinimg.com/1200x/c0/18/71/c01871e6da2cacfeafe01662046fddda.jpg"
+  },
+  {
+    "id": "3",
+    "name": "Pleated Minimal Dress",
+    "stock": 1,
+    "stock_text": "1 in stock",
+    "category": "Dresses",
+    "location_count": 1,
+    "location_text": "1 stores",
+    "badge_status": "Low in stock",
+    "image_url": "https://i.pinimg.com/1200x/ef/2c/4a/ef2c4a38ffb2519f14845e247d9439a4.jpg"
+  }
 ]

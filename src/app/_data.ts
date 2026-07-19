@@ -25,7 +25,7 @@ export type ScreenName =
   | 'ProductDetail'
   | 'Menu';
 
-// คลังข้อมูลสินค้าคอลเลกชันแบรนด์ VANTA ของดรีมมี่
+// คลังข้อมูลสินค้าคอลเลกชันแบรนด์ VANTA 
 export const vantaInventory: Product[] = [
   { id: '1', name: 'VANTA Denim Dress', price: '฿790', stock: 12, category: 'Dresses', status: 'Active', size: 'S, M, L', imageUrl: 'https://i.pinimg.com/736x/e4/33/9e/e4339e0d1429c4e026e90fad88ed978e.jpg' },
   { id: '2', name: 'VANTA Stripe Maxi', price: '฿650', stock: 10, category: 'Dresses', status: 'Active', size: 'M, L', imageUrl: 'https://i.pinimg.com/1200x/c0/18/71/c01871e6da2cacfeafe01662046fddda.jpg' },

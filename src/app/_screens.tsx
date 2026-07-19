@@ -165,13 +165,34 @@ export function ProductsScreen({ products,onSelectProduct, onAddProduct }: Produ
         </TouchableOpacity>
       </View>
       {products.map((item) => (
-        <View key={item.id} style={styles.productCard}>
-    <Image source={{ uri: item.image_url }} style={styles.productImage} />
-    <Text style={styles.productName}>{item.name}</Text>
-    <Text style={styles.productPrice}>Price: {item.price}</Text>
-    <Text style={styles.productSize}>Size: {item.size}</Text>
-    <Text style={styles.productStock}>{item.stock} in stock</Text>
-  </View>
+  <TouchableOpacity 
+    key={item.id} 
+    onPress={() => onSelectProduct(item)} 
+    style={{ 
+      backgroundColor: '#fff',
+      padding: 15,
+      marginVertical: 8,
+      marginHorizontal: 16,
+      borderRadius: 15,
+      flexDirection: 'row',
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOpacity: 0.1,
+      shadowRadius: 5,
+      elevation: 3
+    }}
+  >
+    <Image 
+      source={{ uri: item.image_url }} 
+      style={{ width: 80, height: 80, borderRadius: 10 }} 
+    />
+    <View style={{ marginLeft: 15, flex: 1 }}>
+      <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{item.name}</Text>
+      <Text style={{ fontSize: 14, color: '#666' }}>Size: {item.size}</Text>
+      <Text style={{ fontSize: 14, color: '#666' }}>Category: {item.category}</Text>
+    </View>
+    <Text style={{ fontSize: 16, fontWeight: 'bold' }}>฿{item.price}</Text>
+  </TouchableOpacity>
 ))}
     </View>
   );

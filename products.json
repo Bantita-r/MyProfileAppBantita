@@ -2,7 +2,7 @@
   {
     "id": "1",
     "name": "VANTA Denim Dress",
-    "price": "$790",
+    "price": "790",
     "stock": 12,
     "category": "Dresses",
     "status": "Active",
@@ -12,7 +12,7 @@
   {
     "id": "2",
     "name": "VANTA Stripe Maxi",
-    "price": "$650",
+    "price": "650",
     "stock": 10,
     "category": "Dresses",
     "status": "Active",
@@ -22,7 +22,7 @@
   {
     "id": "3",
     "name": "Pleated Minimal Dress",
-    "price": "$590",
+    "price": "590",
     "stock": 1,
     "category": "Dresses",
     "status": "Low in stock",
@@ -32,7 +32,7 @@
   {
     "id": "4",
     "name": "Smocked Crop Top",
-    "price": "$390",
+    "price": "390",
     "stock": 22,
     "category": "Tops",
     "status": "Active",

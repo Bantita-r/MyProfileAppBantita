@@ -15,7 +15,9 @@ import {
 import { styles } from './_styles';
 
   
-
+//const PRODUCTS_URL = 
+//'https://raw.githubusercontent.com/Bantita-r/MyProfileAppBantita/refs/heads/main/products.json';
+const API_BASE_URL = 'http://119.59.102.161:3026/api/products';
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenName>('Home');
@@ -25,13 +27,24 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [products, setProducts] = useState<any[]>([]);
  useEffect(() => {
-    async function loadProducts() {
-      const response = await fetch('https://raw.githubusercontent.com/Bantita-r/MyProfileAppBantita/refs/heads/main/products.json?t=' + Date.now());
+  async function loadProducts() {
+    try {
+      console.log("กำลังจะไปดึงข้อมูลจาก:", API_BASE_URL); // เพิ่มบรรทัดนี้
+      const response = await fetch(API_BASE_URL);
+
+      if (!response.ok) {
+        throw new Error('ไม่สามารถดึงข้อมูลจากเซิร์ฟเวอร์ได้');
+      }
+
       const data = await response.json();
+      console.log("ได้ข้อมูลมาแล้ว:", data); // เพิ่มบรรทัดนี้
       setProducts(data);
+    } catch (error) {
+      console.error("Error เกิดขึ้นที่นี่:", error); // เพิ่มบรรทัดนี้
     }
-    void loadProducts();
-  }, []);
+  }
+  loadProducts();
+}, []);
   // สเตตัสข้อมูลโปรไฟล์ส่วนตัว (Personal Settings) เนื้อหาอิงตาม Uizard รูป 2
   const [profileName, setProfileName] = useState('Bantita');
   const [profileEmail, setProfileEmail] = useState('Bantita.rat@ku.ac.th');

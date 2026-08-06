@@ -292,7 +292,8 @@ export function ProductDetailScreen({ product }: ProductDetailScreenProps) {
   return (
     <View style={{ alignItems: 'center', paddingBottom: 20 }}>
       <View style={styles.detailCard}>
-        <Image source={{ uri: product.imageUrl }} style={styles.detailImage} resizeMode="contain" />
+        <Image source={{ uri: `http://119.59.102.161:3026/images/${encodeURIComponent(product.image.trim())}` }} style={styles.detailImage} 
+  resizeMode="contain" />
         <Text style={styles.detailTitle}>{product.name}</Text>
 
         <View style={styles.detailRow}><Text style={styles.detailSectionLabel}>Price:</Text><Text style={styles.detailValueText}>{product.price}</Text></View>

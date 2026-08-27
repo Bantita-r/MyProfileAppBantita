@@ -1,55 +1,443 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const mysql = require('mysql2/promise'); // ใช้ mysql2/promise 
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+
+const bcrypt = require("bcrypt");
+const cors = require("cors");
+const express = require("express");
+const jwt = require("jsonwebtoken");
+const mysql = require("mysql2/promise");
 
 const app = express();
-const port = process.env.PORT || 3026; 
+const port = Number(process.env.PORT || 3026);
+const jwtSecret = process.env.JWT_SECRET;
+const inventoryTable = process.env.INVENTORY_TABLE || "Iventory";
+const allowedOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+if (!jwtSecret) throw new Error("JWT_SECRET is required in backend/.env");
+if (!/^[A-Za-z0-9_]+$/.test(inventoryTable))
+  throw new Error("INVENTORY_TABLE contains invalid characters");
 
-// MySQL Connection Pool 
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Native Expo requests have no Origin header. Browser builds must be explicitly allowed.
+      if (!origin || allowedOrigins.includes(origin))
+        return callback(null, true);
+      return callback(new Error("Origin is not allowed by CORS"));
+    },
+  }),
+);
+app.use(express.json({ limit: "1mb" }));
+
 const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT || 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT || 3306),
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
-// Test Connection function (ฟังก์ชันทดสอบการเชื่อมต่อ)
-async function testMySQL() {
-    try {
-        const conn = await pool.getConnection();
-        console.log('Connected to MySQL:', process.env.DB_NAME);
-        conn.release();
-    } catch (err) {
-        console.error('MySQL Failed:', err.message);
-        process.exit(1);
-    }
+function toProductInput(body) {
+  const name = String(body.name ?? "").trim();
+  const category = String(body.category ?? "").trim();
+  const price = Number(body.price);
+  const stock = Number(body.stock);
+  if (
+    !name ||
+    !category ||
+    !Number.isFinite(price) ||
+    price < 0 ||
+    !Number.isInteger(stock) ||
+    stock < 0
+  )
+    return null;
+  return {
+    name,
+    category,
+    price,
+    stock,
+    image: body.image ? String(body.image).trim() : null,
+    status: body.status ? String(body.status).trim() : "Available",
+    brand: body.brand ? String(body.brand).trim() : "Vanta",
+    sizes: body.sizes ? String(body.sizes).trim() : null,
+    // The existing inventory schema requires a product code. Generate one for
+    // products created from the current form, which does not ask users for it.
+    productCode: body.productCode
+      ? String(body.productCode).trim()
+      : `VANTA-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    location: body.location ? String(body.location).trim() : "Warehouse A",
+    orderName: body.orderName ? String(body.orderName).trim() : "Vanta.Bantita",
+  };
 }
-testMySQL();
 
-// Get products (API ดึงข้อมูลสินค้า)
-app.get('/api/products', async (req, res) => {
-    try {
-        const [rows] = await pool.query('SELECT * FROM Iventory ORDER BY lastUpdate DESC');
-        res.json(rows);
-    } catch (e) {
-        console.error('Products Error:', e.message);
-        res.status(500).json({ error: 'Failed to fetch products' });
+function text(value, maxLength = 255) {
+  return String(value ?? "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function toUserProfile(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    displayName: user.display_name || user.username,
+    email: user.email || "",
+    store: user.store || "",
+    employeeCode: user.employee_code || "",
+  };
+}
+
+async function ensureUserProfileColumns() {
+  const columns = [
+    ["display_name", "VARCHAR(100) NULL"],
+    ["email", "VARCHAR(255) NULL"],
+    ["store", "VARCHAR(100) NULL"],
+    ["employee_code", "VARCHAR(100) NULL"],
+  ];
+  for (const [name, definition] of columns) {
+    const [existing] = await pool.query(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+      [process.env.DB_NAME, "users", name],
+    );
+    if (existing.length === 0)
+      await pool.query(`ALTER TABLE users ADD COLUMN ${name} ${definition}`);
+  }
+}
+
+async function ensureUserRoleColumn() {
+  // Earlier installations created `role` with `admin` as its default (and some
+  // databases may have it as an ENUM containing only `admin`).  In that state
+  // a normal account cannot be created even though /auth/register assigns the
+  // correct `user` role.  Use a flexible role column and make `user` the safe
+  // default; existing administrator values are preserved by MySQL.
+  const [columns] = await pool.query(
+    "SELECT COLUMN_TYPE, COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+    [process.env.DB_NAME, "users", "role"],
+  );
+  const roleColumn = columns[0];
+  const isRestrictedEnum =
+    /^enum/i.test(roleColumn?.COLUMN_TYPE ?? "") &&
+    !roleColumn.COLUMN_TYPE.toLowerCase().includes("'user'");
+  if (
+    !roleColumn ||
+    !/^varchar\(50\)$/i.test(roleColumn.COLUMN_TYPE) ||
+    roleColumn.COLUMN_DEFAULT !== "user" ||
+    isRestrictedEnum
+  ) {
+    await pool.query(
+      "ALTER TABLE users MODIFY COLUMN role VARCHAR(50) NOT NULL DEFAULT 'user'",
+    );
+  }
+}
+
+async function bootstrap() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS users (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'user',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  await ensureUserRoleColumn();
+  await ensureUserProfileColumns();
+
+  const adminUsername = process.env.ADMIN_USERNAME;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (adminUsername && adminPassword) {
+    const [existing] = await pool.query(
+      "SELECT id FROM users WHERE username = ? LIMIT 1",
+      [adminUsername],
+    );
+    if (existing.length === 0) {
+      await pool.query(
+        "INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)",
+        [
+          adminUsername,
+          await bcrypt.hash(adminPassword, 12),
+          "admin",
+          adminUsername,
+        ],
+      );
+      console.log(`Created initial admin account: ${adminUsername}`);
     }
-});
-// รัน api
-app.get('/api', (req, res) => {
-    res.send('API is running');
+  } else {
+    console.warn(
+      "ADMIN_USERNAME and ADMIN_PASSWORD are not set; no initial account was created.",
+    );
+  }
+}
+
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  if (!token) return res.status(401).json({ error: "กรุณาเข้าสู่ระบบ" });
+  try {
+    req.user = jwt.verify(token, jwtSecret);
+    return next();
+  } catch {
+    return res
+      .status(401)
+      .json({ error: "Session หมดอายุ กรุณาเข้าสู่ระบบใหม่" });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (String(req.user?.role ?? "").trim().toLowerCase() !== "admin")
+    return res
+      .status(403)
+      .json({ error: "เฉพาะผู้ดูแลระบบเท่านั้นที่จัดการสินค้าได้" });
+  return next();
+}
+
+app.post("/api/auth/login", async (req, res) => {
+  const username = String(req.body.username ?? "").trim();
+  const password = String(req.body.password ?? "");
+  if (!username || !password)
+    return res.status(400).json({ error: "กรุณากรอก username และ password" });
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, username, password_hash, role, display_name, email, store, employee_code FROM users WHERE username = ? LIMIT 1",
+      [username],
+    );
+    const user = rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password_hash)))
+      return res
+        .status(401)
+        .json({ error: "Username หรือ password ไม่ถูกต้อง" });
+    const token = jwt.sign(
+      { sub: user.id, username: user.username, role: user.role },
+      jwtSecret,
+      { expiresIn: "8h" },
+    );
+    return res.json({ token, user: toUserProfile(user) });
+  } catch (error) {
+    console.error("Login error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถเข้าสู่ระบบได้" });
+  }
 });
 
-// รัน Server
-app.listen(port, '0.0.0.0', () => {
-    console.log(`API running on port ${port}`);
+app.post("/api/auth/register", async (req, res) => {
+  const username = text(req.body.username, 100);
+  const password = String(req.body.password ?? "");
+  const displayName = text(req.body.displayName, 100) || username;
+  const email = text(req.body.email, 255);
+  if (!/^[A-Za-z0-9_.-]{3,100}$/.test(username))
+    return res
+      .status(400)
+      .json({
+        error:
+          "Username ต้องมี 3-100 ตัวอักษร และใช้ได้เฉพาะ a-z, 0-9, _, ., -",
+      });
+  if (password.length < 8)
+    return res
+      .status(400)
+      .json({ error: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" });
+  if (email && !/^\S+@\S+\.\S+$/.test(email))
+    return res.status(400).json({ error: "อีเมลไม่ถูกต้อง" });
+  try {
+    const [result] = await pool.query(
+      "INSERT INTO users (username, password_hash, role, display_name, email) VALUES (?, ?, ?, ?, ?)",
+      [
+        username,
+        await bcrypt.hash(password, 12),
+        "user",
+        displayName,
+        email || null,
+      ],
+    );
+    return res
+      .status(201)
+      .json({
+        id: result.insertId,
+        username,
+        role: "user",
+        displayName,
+        email,
+      });
+  } catch (error) {
+    if (error.code === "ER_DUP_ENTRY")
+      return res.status(409).json({ error: "Username นี้ถูกใช้งานแล้ว" });
+    console.error("Register error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถสมัครสมาชิกได้" });
+  }
 });
+
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, username, role, display_name, email, store, employee_code FROM users WHERE id = ? LIMIT 1",
+      [req.user.sub],
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ error: "ไม่พบบัญชีผู้ใช้" });
+    return res.json(toUserProfile(rows[0]));
+  } catch (error) {
+    console.error("Get profile error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถโหลดข้อมูลส่วนตัวได้" });
+  }
+});
+
+app.put("/api/auth/me", requireAuth, async (req, res) => {
+  const displayName = text(req.body.displayName, 100);
+  const email = text(req.body.email, 255);
+  const store = text(req.body.store, 100);
+  const employeeCode = text(req.body.employeeCode, 100);
+  const password = String(req.body.password ?? "");
+  if (!displayName || (email && !/^\S+@\S+\.\S+$/.test(email)))
+    return res.status(400).json({ error: "ข้อมูลส่วนตัวไม่ถูกต้อง" });
+  if (password && password.length < 8)
+    return res
+      .status(400)
+      .json({ error: "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร" });
+  try {
+    if (password) {
+      await pool.query(
+        "UPDATE users SET display_name = ?, email = ?, store = ?, employee_code = ?, password_hash = ? WHERE id = ?",
+        [
+          displayName,
+          email || null,
+          store || null,
+          employeeCode || null,
+          await bcrypt.hash(password, 12),
+          req.user.sub,
+        ],
+      );
+    } else {
+      await pool.query(
+        "UPDATE users SET display_name = ?, email = ?, store = ?, employee_code = ? WHERE id = ?",
+        [
+          displayName,
+          email || null,
+          store || null,
+          employeeCode || null,
+          req.user.sub,
+        ],
+      );
+    }
+    const [rows] = await pool.query(
+      "SELECT id, username, role, display_name, email, store, employee_code FROM users WHERE id = ? LIMIT 1",
+      [req.user.sub],
+    );
+    return res.json(toUserProfile(rows[0]));
+  } catch (error) {
+    console.error("Update profile error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถบันทึกข้อมูลส่วนตัวได้" });
+  }
+});
+
+app.get("/api/products", requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT * FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
+    );
+    return res.json(rows);
+  } catch (error) {
+    console.error("Get products error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถโหลดสินค้าได้" });
+  }
+});
+
+app.post("/api/products", requireAuth, requireAdmin, async (req, res) => {
+  const product = toProductInput(req.body);
+  if (!product)
+    return res.status(400).json({ error: "ข้อมูลสินค้าไม่ถูกต้อง" });
+  try {
+    const [result] = await pool.query(
+      `INSERT INTO \`${inventoryTable}\` (name, stock, category, location, image, status, brand, sizes, productCode, orderName, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        product.name,
+        product.stock,
+        product.category,
+        product.location,
+        product.image,
+        product.status,
+        product.brand,
+        product.sizes,
+        product.productCode,
+        product.orderName,
+        product.price,
+      ],
+    );
+    const [rows] = await pool.query(
+      `SELECT * FROM \`${inventoryTable}\` WHERE id = ?`,
+      [result.insertId],
+    );
+    return res.status(201).json(rows[0]);
+  } catch (error) {
+    console.error("Create product error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถเพิ่มสินค้าได้" });
+  }
+});
+
+app.put("/api/products/:id", requireAuth, requireAdmin, async (req, res) => {
+  const product = toProductInput(req.body);
+  const id = Number(req.params.id);
+  if (!product || !Number.isInteger(id))
+    return res.status(400).json({ error: "ข้อมูลสินค้าไม่ถูกต้อง" });
+  try {
+    const [result] = await pool.query(
+      `UPDATE \`${inventoryTable}\` SET name = ?, stock = ?, category = ?, location = ?, image = ?, status = ?, brand = ?, sizes = ?, productCode = ?, orderName = ?, price = ? WHERE id = ?`,
+      [
+        product.name,
+        product.stock,
+        product.category,
+        product.location,
+        product.image,
+        product.status,
+        product.brand,
+        product.sizes,
+        product.productCode,
+        product.orderName,
+        product.price,
+        id,
+      ],
+    );
+    if (result.affectedRows === 0)
+      return res.status(404).json({ error: "ไม่พบสินค้า" });
+    const [rows] = await pool.query(
+      `SELECT * FROM \`${inventoryTable}\` WHERE id = ?`,
+      [id],
+    );
+    return res.json(rows[0]);
+  } catch (error) {
+    console.error("Update product error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถแก้ไขสินค้าได้" });
+  }
+});
+
+app.delete("/api/products/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id))
+    return res.status(400).json({ error: "รหัสสินค้าไม่ถูกต้อง" });
+  try {
+    const [result] = await pool.query(
+      `DELETE FROM \`${inventoryTable}\` WHERE id = ?`,
+      [id],
+    );
+    if (result.affectedRows === 0)
+      return res.status(404).json({ error: "ไม่พบสินค้า" });
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Delete product error:", error.message);
+    return res.status(500).json({ error: "ไม่สามารถลบสินค้าได้" });
+  }
+});
+
+app.get("/api", (_req, res) => res.json({ message: "VANTA API is running" }));
+
+bootstrap()
+  .then(() =>
+    app.listen(port, "0.0.0.0", () =>
+      console.log(`VANTA API listening on port ${port}`),
+    ),
+  )
+  .catch((error) => {
+    console.error("Server startup failed:", error.message);
+    process.exit(1);
+  });

@@ -1,8 +1,10 @@
 import { useState } from "react";
+import * as ImagePicker from "expo-image-picker";
 import {
   Alert,
   Image,
   ImageSourcePropType,
+  Modal,
   Platform,
   Text,
   TextInput,
@@ -12,6 +14,7 @@ import {
 import { AppIcon } from "./_components";
 import { Product, ScreenName } from "./_data";
 import { styles } from "./_styles";
+import { uploadProductImage } from "./_api";
 
 const LOCAL_PRODUCT_IMAGES: Record<string, ImageSourcePropType> = {
   "VANTA Denim Dress": require("../images_product/images_product/VANTA Denim Dress.jpg"),
@@ -20,7 +23,7 @@ const LOCAL_PRODUCT_IMAGES: Record<string, ImageSourcePropType> = {
   "Smocked Crop Top": require("../images_product/images_product/Smocked Crop Top.jpg"),
 };
 function productImageSource(product: Product): ImageSourcePropType {
-  return product.image?.startsWith("http")
+  return product.image?.startsWith("http") || product.image?.startsWith("file:")
     ? { uri: product.image }
     : (LOCAL_PRODUCT_IMAGES[product.name] ??
         LOCAL_PRODUCT_IMAGES["Smocked Crop Top"]);
@@ -318,16 +321,31 @@ export function AddProductScreen({
   onSave,
 }: {
   product: Product | null;
-  onSave: (product: ProductInput) => void;
+  onSave: (product: ProductInput) => void | Promise<void>;
 }) {
   const [name, setName] = useState(product?.name ?? "");
   const [category, setCategory] = useState(product?.category ?? "");
   const [sizes, setSizes] = useState(product?.sizes ?? "");
   const [price, setPrice] = useState(String(product?.price ?? ""));
   const [image, setImage] = useState(product?.image ?? "");
+  const [selectedImage, setSelectedImage] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [stock, setStock] = useState(product ? String(product.stock) : "");
   const [location, setLocation] = useState(product?.location ?? "Warehouse A");
-  const submit = () => {
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setSelectedImage(asset);
+    setImage(asset.uri);
+  };
+  const submit = async () => {
     if (!name.trim() || !category.trim() || !price.trim() || !stock.trim())
       return Alert.alert(
         "กรอกข้อมูลไม่ครบ",
@@ -345,18 +363,31 @@ export function AddProductScreen({
         "ข้อมูลไม่ถูกต้อง",
         "ราคาและจำนวนคงเหลือต้องเป็นตัวเลขที่ไม่ติดลบ",
       );
-    onSave({
+    try {
+      setIsUploading(true);
+      const imageUrl = selectedImage
+        ? await uploadProductImage(selectedImage)
+        : image.trim() || null;
+      await onSave({
       name: name.trim(),
       category: category.trim(),
       sizes: sizes.trim() || null,
       price: numericPrice,
       stock: numericStock,
-      image: image.trim() || null,
+      image: imageUrl,
       status: product?.status ?? "Available",
       brand: product?.brand ?? "Vanta",
       productCode: product?.productCode ?? null,
       location: location.trim() || "Warehouse A",
-    });
+      });
+    } catch (error) {
+      Alert.alert(
+        "อัปโหลดรูปไม่สำเร็จ",
+        error instanceof Error ? error.message : "กรุณาลองใหม่อีกครั้ง",
+      );
+    } finally {
+      setIsUploading(false);
+    }
   };
   return (
     <View style={{ paddingBottom: 20 }}>
@@ -406,16 +437,35 @@ export function AddProductScreen({
           value={location}
           onChangeText={setLocation}
         />
-        <Text style={styles.formLabel}>IMAGE URL</Text>
+        <Text style={styles.formLabel}>PRODUCT IMAGE</Text>
+        {image ? (
+          <Image source={{ uri: image }} style={{ width: "100%", height: 180, borderRadius: 12, marginBottom: 10 }} />
+        ) : null}
+        <TouchableOpacity
+          style={[styles.submitFormBtn, { marginBottom: 10, backgroundColor: "#E8F1FC" }]}
+          onPress={() => void pickImage()}
+          disabled={isUploading}
+        >
+          <Text style={[styles.submitFormBtnText, { color: "#2366A8" }]}>Choose image from device</Text>
+        </TouchableOpacity>
+        <Text style={styles.formLabel}>OR IMAGE URL</Text>
         <TextInput
           style={styles.formInput}
           value={image}
           onChangeText={setImage}
           autoCapitalize="none"
         />
-        <TouchableOpacity style={styles.submitFormBtn} onPress={submit}>
+        <TouchableOpacity
+          style={[styles.submitFormBtn, isUploading && { opacity: 0.6 }]}
+          onPress={() => void submit()}
+          disabled={isUploading}
+        >
           <Text style={styles.submitFormBtnText}>
-            {product ? "Save changes" : "Save product"}
+            {isUploading
+              ? "Uploading image..."
+              : product
+                ? "Save changes"
+                : "Save product"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -638,12 +688,16 @@ export function CartScreen({
   products,
   onChangeQuantity,
   onRemove,
+  onCheckout,
 }: {
   items: { productId: number; quantity: number }[];
   products: Product[];
   onChangeQuantity: (productId: number, quantity: number) => void;
   onRemove: (productId: number) => void;
+  onCheckout: (paymentMethod: string, total: number) => void;
 }) {
+  const [paymentVisible, setPaymentVisible] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("พร้อมเพย์ / QR Code");
   const rows = items
     .map((item) => ({
       ...item,
@@ -755,6 +809,80 @@ export function CartScreen({
               ฿{formatPrice(total)}
             </Text>
           </View>
+          <TouchableOpacity
+            style={[styles.submitFormBtn, { marginTop: 12 }]}
+            onPress={() => setPaymentVisible(true)}
+          >
+            <Text style={styles.submitFormBtnText}>ดำเนินการชำระเงิน</Text>
+          </TouchableOpacity>
+          <Modal
+            visible={paymentVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setPaymentVisible(false)}
+          >
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "flex-end",
+                backgroundColor: "rgba(10, 20, 36, 0.5)",
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: "#FFFFFF",
+                  borderTopLeftRadius: 24,
+                  borderTopRightRadius: 24,
+                  padding: 22,
+                  paddingBottom: 32,
+                }}
+              >
+                <Text style={[styles.sectionTitleLarge, { marginTop: 0 }]}>ชำระเงิน</Text>
+                <Text style={styles.sectionSubtitle}>ยอดที่ต้องชำระ</Text>
+                <Text style={{ fontSize: 28, fontWeight: "900", color: "#B77B09", marginVertical: 8 }}>
+                  ฿{formatPrice(total)}
+                </Text>
+                <Text style={[styles.formLabel, { marginTop: 10 }]}>เลือกวิธีชำระเงิน</Text>
+                {["พร้อมเพย์ / QR Code", "บัตรเครดิต / เดบิต", "เก็บเงินปลายทาง"].map((method) => {
+                  const selected = paymentMethod === method;
+                  return (
+                    <TouchableOpacity
+                      key={method}
+                      onPress={() => setPaymentMethod(method)}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: selected ? "#E8B44F" : "#E1E7F0",
+                        backgroundColor: selected ? "#FFF7E6" : "#FFFFFF",
+                        borderRadius: 12,
+                        padding: 14,
+                        marginTop: 8,
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Text style={{ color: "#192A46", fontWeight: "800" }}>{method}</Text>
+                      <Text style={{ color: "#B77B09", fontWeight: "900" }}>{selected ? "✓" : ""}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  style={[styles.submitFormBtn, { marginTop: 20 }]}
+                  onPress={() => {
+                    setPaymentVisible(false);
+                    onCheckout(paymentMethod, total);
+                  }}
+                >
+                  <Text style={styles.submitFormBtnText}>ยืนยันการสั่งซื้อ ฿{formatPrice(total)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ alignItems: "center", paddingTop: 16 }}
+                  onPress={() => setPaymentVisible(false)}
+                >
+                  <Text style={{ color: "#66758C", fontWeight: "800" }}>ยกเลิก</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </>
       )}
     </View>

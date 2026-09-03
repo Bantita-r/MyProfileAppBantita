@@ -1,16 +1,20 @@
 const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const bcrypt = require("bcrypt");
 const cors = require("cors");
 const express = require("express");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
 const mysql = require("mysql2/promise");
 
 const app = express();
+app.set("trust proxy", 1);
 const port = Number(process.env.PORT || 3026);
 const jwtSecret = process.env.JWT_SECRET;
-const inventoryTable = process.env.INVENTORY_TABLE || "Iventory";
+const inventoryTable = process.env.INVENTORY_TABLE || "Inventory";
 const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
   .map((origin) => origin.trim())
@@ -19,6 +23,24 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "")
 if (!jwtSecret) throw new Error("JWT_SECRET is required in backend/.env");
 if (!/^[A-Za-z0-9_]+$/.test(inventoryTable))
   throw new Error("INVENTORY_TABLE contains invalid characters");
+
+const uploadDirectory = path.join(__dirname, "uploads");
+fs.mkdirSync(uploadDirectory, { recursive: true });
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDirectory,
+    filename(_req, file, callback) {
+      const extension =
+        path.extname(file.originalname).toLowerCase() ||
+        (file.mimetype === "image/png" ? ".png" : ".jpg");
+      callback(null, `${crypto.randomUUID()}${extension}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter(_req, file, callback) {
+    callback(null, /^image\/(jpeg|png|webp|gif)$/.test(file.mimetype));
+  },
+});
 
 app.use(
   cors({
@@ -31,6 +53,7 @@ app.use(
   }),
 );
 app.use(express.json({ limit: "1mb" }));
+app.use("/uploads", express.static(uploadDirectory));
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -343,6 +366,21 @@ app.get("/api/products", requireAuth, async (_req, res) => {
   }
 });
 
+app.post(
+  "/api/uploads/products",
+  requireAuth,
+  requireAdmin,
+  imageUpload.single("image"),
+  (req, res) => {
+    if (!req.file)
+      return res.status(400).json({ error: "กรุณาเลือกไฟล์รูปภาพ" });
+    const origin = `${req.protocol}://${req.get("host")}`;
+    return res.status(201).json({
+      imageUrl: new URL(`/uploads/${req.file.filename}`, origin).toString(),
+    });
+  },
+);
+
 app.post("/api/products", requireAuth, requireAdmin, async (req, res) => {
   const product = toProductInput(req.body);
   if (!product)
@@ -430,6 +468,13 @@ app.delete("/api/products/:id", requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get("/api", (_req, res) => res.json({ message: "VANTA API is running" }));
+
+app.use((error, _req, res, next) => {
+  if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE")
+    return res.status(400).json({ error: "ไฟล์รูปต้องมีขนาดไม่เกิน 5 MB" });
+  if (error) return res.status(400).json({ error: "อัปโหลดรูปภาพไม่สำเร็จ" });
+  return next();
+});
 
 bootstrap()
   .then(() =>

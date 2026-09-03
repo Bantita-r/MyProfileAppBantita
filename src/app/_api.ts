@@ -189,6 +189,42 @@ export const updateMyProfile = (
     body: JSON.stringify(profile),
   });
 export const getProducts = () => request<Product[]>("/products");
+export async function uploadProductImage(asset: {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  file?: File;
+}): Promise<string> {
+  const formData = new FormData();
+  if (Platform.OS === "web" && asset.file) {
+    // Expo ImagePicker returns the browser File on web. A blob: preview URL
+    // cannot be uploaded directly, but this File can be sent via FormData.
+    formData.append("image", asset.file, asset.file.name);
+  } else {
+    formData.append(
+      "image",
+      {
+        uri: asset.uri,
+        name: asset.fileName || `product-${Date.now()}.jpg`,
+        type: asset.mimeType || "image/jpeg",
+      } as unknown as Blob,
+    );
+  }
+  const response = await fetch(`${API_BASE_URL}/uploads/products`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new Error(
+      body.error ??
+        (response.status === 404
+          ? "เซิร์ฟเวอร์ยังไม่ได้อัปเดตระบบอัปโหลดรูปภาพ"
+          : "ไม่สามารถอัปโหลดรูปภาพได้"),
+    );
+  return String(body.imageUrl);
+}
 export const createProduct = (product: ProductInput) =>
   request<Product>("/products", {
     method: "POST",

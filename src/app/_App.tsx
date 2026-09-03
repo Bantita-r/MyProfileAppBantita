@@ -277,6 +277,15 @@ export default function App() {
     if (profileId) await saveCart(profileId, next);
   };
 
+  const checkout = async (paymentMethod: string, total: number) => {
+    setCartItems([]);
+    if (profileId) await saveCart(profileId, []);
+    Alert.alert(
+      "สั่งซื้อสำเร็จ",
+      `ชำระเงินผ่าน ${paymentMethod}\nยอดชำระ ฿${total.toLocaleString("th-TH")}`,
+    );
+  };
+
   const handleLogout = async () => {
     await clearSession();
     setIsLoggedIn(false);
@@ -423,6 +432,9 @@ export default function App() {
                 void changeCartQuantity(id, quantity)
               }
               onRemove={(id) => void changeCartQuantity(id, 0)}
+              onCheckout={(paymentMethod, total) =>
+                void checkout(paymentMethod, total)
+              }
             />
           )}
           {currentScreen === "Favorites" && (

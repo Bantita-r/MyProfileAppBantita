@@ -105,6 +105,106 @@ function text(value, maxLength = 255) {
     .slice(0, maxLength);
 }
 
+function runProductClustering(products) {
+  if (products.length < 2)
+    throw new Error("Add at least 2 products before running K-Means.");
+
+  const points = products.map((product) => {
+    const price = Number(product.price);
+    const stock = Number(product.stock);
+    if (!Number.isFinite(price) || !Number.isFinite(stock))
+      throw new Error("Every product price and stock value must be numeric.");
+    return [price, stock];
+  });
+  const clusterCount = Math.min(3, points.length);
+  const means = [0, 1].map((column) =>
+    points.reduce((sum, point) => sum + point[column], 0) / points.length,
+  );
+  const standardDeviations = [0, 1].map((column) => {
+    const variance =
+      points.reduce(
+        (sum, point) => sum + (point[column] - means[column]) ** 2,
+        0,
+      ) / points.length;
+    return Math.sqrt(variance) || 1;
+  });
+  const normalized = points.map((point) =>
+    point.map((value, column) => (value - means[column]) / standardDeviations[column]),
+  );
+  let centroids = Array.from({ length: clusterCount }, (_, index) =>
+    [...normalized[Math.floor((index * normalized.length) / clusterCount)]],
+  );
+  let labels = normalized.map(() => 0);
+
+  for (let iteration = 0; iteration < 100; iteration += 1) {
+    const nextLabels = normalized.map((point) => {
+      let closest = 0;
+      let closestDistance = Infinity;
+      centroids.forEach((centroid, index) => {
+        const distance = point.reduce(
+          (sum, value, column) => sum + (value - centroid[column]) ** 2,
+          0,
+        );
+        if (distance < closestDistance) {
+          closest = index;
+          closestDistance = distance;
+        }
+      });
+      return closest;
+    });
+    const nextCentroids = centroids.map((centroid, cluster) => {
+      const members = normalized.filter((_, index) => nextLabels[index] === cluster);
+      return members.length === 0
+        ? centroid
+        : [0, 1].map(
+            (column) =>
+              members.reduce((sum, point) => sum + point[column], 0) /
+              members.length,
+          );
+    });
+    const unchanged = nextLabels.every((label, index) => label === labels[index]);
+    labels = nextLabels;
+    centroids = nextCentroids;
+    if (unchanged) break;
+  }
+
+  const groups = Array.from({ length: clusterCount }, (_, index) => {
+    const memberIndexes = labels
+      .map((label, productIndex) => (label === index ? productIndex : -1))
+      .filter((productIndex) => productIndex >= 0);
+    const averagePrice =
+      memberIndexes.reduce((sum, productIndex) => sum + points[productIndex][0], 0) /
+      memberIndexes.length;
+    const averageStock =
+      memberIndexes.reduce((sum, productIndex) => sum + points[productIndex][1], 0) /
+      memberIndexes.length;
+    return {
+      id: index + 1,
+      label: `${averagePrice >= means[0] ? "High value" : "Lower value"} / ${averageStock >= means[1] ? "high stock" : "low stock"}`,
+      averagePrice: Number(averagePrice.toFixed(2)),
+      averageStock: Number(averageStock.toFixed(2)),
+      products: memberIndexes.map((productIndex) => ({
+        ...products[productIndex],
+        price: points[productIndex][0],
+        stock: points[productIndex][1],
+        cluster: index + 1,
+      })),
+    };
+  }).sort((left, right) => right.averagePrice - left.averagePrice);
+
+  groups.forEach((group, index) => {
+    group.id = index + 1;
+    group.products.forEach((product) => (product.cluster = group.id));
+  });
+  return {
+    algorithm: "K-Means",
+    features: ["price", "stock"],
+    normalization: "StandardScaler",
+    clusterCount,
+    clusters: groups,
+  };
+}
+
 function toUserProfile(user) {
   return {
     id: user.id,
@@ -351,6 +451,35 @@ app.put("/api/auth/me", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Update profile error:", error.message);
     return res.status(500).json({ error: "ไม่สามารถบันทึกข้อมูลส่วนตัวได้" });
+  }
+});
+
+// This read-only route is the individual deliverable for the in-class
+// assignment.  It deliberately needs no login so the lecturer (and, in the
+// original group version, the central aggregation API) can request one
+// consistent JSON data source directly.  Administrative create/update/delete
+// routes below remain protected by JWT and the admin role.
+app.get("/api/assignment/products", async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, name, category, price, stock, location, status, brand, sizes, productCode, lastUpdate FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
+    );
+    return res.json(rows);
+  } catch (error) {
+    console.error("Get assignment products error:", error.message);
+    return res.status(500).json({ error: "Unable to load assignment products" });
+  }
+});
+
+app.get("/api/analytics/product-clusters", requireAuth, async (_req, res) => {
+  try {
+    const [products] = await pool.query(
+      `SELECT id, name, category, price, stock, location FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
+    );
+    return res.json(runProductClustering(products));
+  } catch (error) {
+    console.error("Product clustering error:", error.message);
+    return res.status(500).json({ error: error.message });
   }
 });
 

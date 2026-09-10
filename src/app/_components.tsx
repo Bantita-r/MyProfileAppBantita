@@ -62,6 +62,7 @@ export function Header({
     "AddProduct",
     "EditProduct",
     "Favorites",
+    "Analytics",
   ].includes(currentScreen);
   return (
     <View style={styles.header}>

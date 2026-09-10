@@ -17,6 +17,24 @@ export type UserProfile = {
 };
 export type AuthResponse = { token: string; user: UserProfile };
 export type ProductInput = Omit<Product, "id">;
+export type ClusteredProduct = Pick<
+  Product,
+  "id" | "name" | "category" | "price" | "stock" | "location"
+> & { cluster: number };
+export type ProductCluster = {
+  id: number;
+  label: string;
+  averagePrice: number;
+  averageStock: number;
+  products: ClusteredProduct[];
+};
+export type ProductClusterAnalysis = {
+  algorithm: "K-Means";
+  features: ["price", "stock"];
+  normalization: "StandardScaler";
+  clusterCount: number;
+  clusters: ProductCluster[];
+};
 
 let token: string | null = null;
 const TOKEN_KEY = "vanta_auth_token";
@@ -189,6 +207,8 @@ export const updateMyProfile = (
     body: JSON.stringify(profile),
   });
 export const getProducts = () => request<Product[]>("/products");
+export const getProductClusters = () =>
+  request<ProductClusterAnalysis>("/analytics/product-clusters");
 export async function uploadProductImage(asset: {
   uri: string;
   fileName?: string | null;

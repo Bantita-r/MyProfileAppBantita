@@ -12,10 +12,12 @@ import {
   clearSession,
   createProduct,
   deleteProduct,
+  getProductClusters,
   getProducts,
   loadCart,
   loadFavoriteProductIds,
   login,
+  ProductClusterAnalysis,
   ProductInput,
   register,
   saveCart,
@@ -28,6 +30,7 @@ import { BottomTabBar, Header } from "./_components";
 import { CartItem, Product, ScreenName } from "./_data";
 import {
   AddProductScreen,
+  AnalyticsScreen,
   CartScreen,
   CategoriesScreen,
   HomeDashboard,
@@ -62,6 +65,9 @@ export default function App() {
   const [profileId, setProfileId] = useState<number | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [clusterAnalysis, setClusterAnalysis] =
+    useState<ProductClusterAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const dashboardStats = useMemo(() => {
     const totalStock = products.reduce(
@@ -87,6 +93,7 @@ export default function App() {
       setSelectedProduct(null);
       setFavoriteIds([]);
       setCartItems([]);
+      setClusterAnalysis(null);
       setCurrentScreen("Home");
       Alert.alert("Session หมดอายุ", "กรุณาเข้าสู่ระบบใหม่");
     });
@@ -286,6 +293,20 @@ export default function App() {
     );
   };
 
+  const analyzeInventory = async () => {
+    setIsAnalyzing(true);
+    try {
+      setClusterAnalysis(await getProductClusters());
+    } catch (error) {
+      Alert.alert(
+        "Analysis failed",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleLogout = async () => {
     await clearSession();
     setIsLoggedIn(false);
@@ -293,6 +314,7 @@ export default function App() {
     setSelectedProduct(null);
     setFavoriteIds([]);
     setCartItems([]);
+    setClusterAnalysis(null);
     setProfileId(null);
     setCurrentScreen("Home");
   };
@@ -435,6 +457,13 @@ export default function App() {
               onCheckout={(paymentMethod, total) =>
                 void checkout(paymentMethod, total)
               }
+            />
+          )}
+          {currentScreen === "Analytics" && (
+            <AnalyticsScreen
+              analysis={clusterAnalysis}
+              loading={isAnalyzing}
+              onAnalyze={() => void analyzeInventory()}
             />
           )}
           {currentScreen === "Favorites" && (

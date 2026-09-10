@@ -14,7 +14,7 @@ import {
 import { AppIcon } from "./_components";
 import { Product, ScreenName } from "./_data";
 import { styles } from "./_styles";
-import { uploadProductImage } from "./_api";
+import { ProductClusterAnalysis, uploadProductImage } from "./_api";
 
 const LOCAL_PRODUCT_IMAGES: Record<string, ImageSourcePropType> = {
   "VANTA Denim Dress": require("../images_product/images_product/VANTA Denim Dress.jpg"),
@@ -206,6 +206,7 @@ export function MenuScreen({
     ["Products", "All products"],
     ["Favorites", "Saved products"],
     ["Categories", "Categories"],
+    ["Analytics", "Stock clusters (K-Means)"],
     ["Settings", "Personal settings"],
   ];
   return (
@@ -311,6 +312,111 @@ export function HomeDashboard({
           </TouchableOpacity>
         ))}
       </View>
+    </View>
+  );
+}
+
+export function AnalyticsScreen({
+  analysis,
+  loading,
+  onAnalyze,
+}: {
+  analysis: ProductClusterAnalysis | null;
+  loading: boolean;
+  onAnalyze: () => void;
+}) {
+  const clusterColors = ["#D95B5B", "#D49722", "#2F9D62"];
+  const products = analysis?.clusters.flatMap((cluster) => cluster.products) ?? [];
+  const maxPrice = Math.max(...products.map((product) => Number(product.price)), 1);
+  const maxStock = Math.max(...products.map((product) => Number(product.stock)), 1);
+  const actionFor = (label: string) =>
+    label.includes("High value / low stock")
+      ? "Watch closely - high-value products are running low."
+      : label.includes("low stock")
+        ? "Consider restocking this group."
+        : "Stock level is healthy and ready to sell.";
+  return (
+    <View style={{ paddingBottom: 20 }}>
+      <Text style={styles.sectionTitleLarge}>Stock clusters</Text>
+      <Text style={styles.sectionSubtitle}>
+        Group products by price and stock using K-Means.
+      </Text>
+      <View style={styles.clusterInfoCard}>
+        <Text style={styles.clusterInfoTitle}>HOW IT WORKS</Text>
+        <Text style={styles.clusterInfoCopy}>
+          Price and stock are normalized first, then K-Means separates the inventory into up to 3 groups.
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={[styles.submitFormBtn, { marginTop: 14 }, loading && { opacity: 0.6 }]}
+        onPress={onAnalyze}
+        disabled={loading}
+      >
+        <Text style={styles.submitFormBtnText}>
+          {loading ? "Analyzing inventory..." : "Analyze inventory"}
+        </Text>
+      </TouchableOpacity>
+      {!analysis && !loading && (
+        <View style={styles.emptyState}>
+          <AppIcon name="categories" size={38} color="#A5B2C4" />
+          <Text style={styles.emptyStateTitle}>No analysis yet</Text>
+          <Text style={styles.emptyStateCopy}>
+            Tap Analyze inventory to create K-Means clusters.
+          </Text>
+        </View>
+      )}
+      {analysis && (
+        <>
+          <View style={styles.clusterChartCard}>
+            <View style={styles.clusterChartHeader}>
+              <View>
+                <Text style={styles.clusterChartTitle}>PRICE x STOCK MAP</Text>
+                <Text style={styles.clusterChartCopy}>Each dot is one product. Color shows its cluster.</Text>
+              </View>
+              <Text style={styles.clusterChartHint}>{"Stock ↑\nPrice →"}</Text>
+            </View>
+            <View style={styles.clusterChartArea}>
+              <View style={styles.clusterChartGridVertical} />
+              <View style={styles.clusterChartGridHorizontal} />
+              {products.map((product) => {
+                const color = clusterColors[(product.cluster - 1) % clusterColors.length];
+                const left = 5 + (Number(product.price) / maxPrice) * 86;
+                const bottom = 5 + (Number(product.stock) / maxStock) * 78;
+                return <View key={product.id} style={[styles.clusterDot, { backgroundColor: color, left: `${left}%`, bottom: `${bottom}%` }]} />;
+              })}
+            </View>
+            <View style={styles.clusterLegend}>
+              {analysis.clusters.map((cluster, index) => (
+                <View key={cluster.id} style={styles.clusterLegendItem}>
+                  <View style={[styles.clusterLegendDot, { backgroundColor: clusterColors[index % clusterColors.length] }]} />
+                  <Text style={styles.clusterLegendText}>C{cluster.id}: {cluster.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          <Text style={[styles.sectionTitle, { marginTop: 22 }]}>RESULT: {analysis.clusterCount} CLUSTERS</Text>
+          {analysis.clusters.map((cluster, index) => (
+            <View key={cluster.id} style={[styles.clusterCard, { borderLeftWidth: 5, borderLeftColor: clusterColors[index % clusterColors.length] }]}>
+              <Text style={styles.clusterTitle}>Cluster {cluster.id}: {cluster.label}</Text>
+              <Text style={styles.clusterAction}>{actionFor(cluster.label)}</Text>
+              <Text style={styles.clusterMeta}>
+                Avg. price ฿{Number(cluster.averagePrice).toLocaleString("th-TH")} · Avg. stock {Number(cluster.averageStock).toLocaleString("th-TH")}
+              </Text>
+              {cluster.products.map((product) => (
+                <View key={product.id} style={styles.clusterProductRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.clusterProductName}>{product.name}</Text>
+                    <Text style={styles.clusterProductMeta}>{product.category}</Text>
+                  </View>
+                  <Text style={styles.clusterProductValue}>
+                    ฿{Number(product.price).toLocaleString("th-TH")}{"\n"}Stock {product.stock}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+        </>
+      )}
     </View>
   );
 }

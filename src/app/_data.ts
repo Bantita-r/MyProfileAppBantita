@@ -27,6 +27,7 @@ export type ScreenName =
   | "Products"
   | "Favorites"
   | "Categories"
+  | "Analytics"
   | "Settings"
   | "ProductDetail"
   | "Cart"

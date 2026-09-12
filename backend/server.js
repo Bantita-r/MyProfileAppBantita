@@ -25,6 +25,20 @@ if (!/^[A-Za-z0-9_]+$/.test(inventoryTable))
   throw new Error("INVENTORY_TABLE contains invalid characters");
 
 const uploadDirectory = path.join(__dirname, "uploads");
+const publicProductImageBase =
+  "https://raw.githubusercontent.com/Bantita-r/MyProfileAppBantita/main/assets/product-images/";
+const publicProductImages = {
+  "VANTA Stripe Maxi": "VANTA Stripe Maxi.jpg",
+  "VANTA Denim Dress": "VANTA Denim Dress.jpg",
+  "Distressed Denim Shorts": "Distressed Denim Shorts.jpg",
+};
+function toPublicProductImage(product) {
+  const publishedImageName = publicProductImages[product.name];
+  if (publishedImageName) {
+    return `${publicProductImageBase}${encodeURIComponent(publishedImageName)}`;
+  }
+  return product.image?.startsWith("http") ? product.image : null;
+}
 fs.mkdirSync(uploadDirectory, { recursive: true });
 const imageUpload = multer({
   storage: multer.diskStorage({
@@ -462,9 +476,20 @@ app.put("/api/auth/me", requireAuth, async (req, res) => {
 app.get("/api/assignment/products", async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, name, category, price, stock, location, status, brand, sizes, productCode, lastUpdate FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
+      `SELECT id, name, category, price, stock, image, location, status, brand, sizes, productCode, lastUpdate FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
     );
-    return res.json(rows);
+    const requestedLimit = Number.parseInt(String(_req.query.limit ?? ""), 10);
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 100)
+      : rows.length;
+    return res.json(
+      rows.slice(0, limit).map((product) => {
+        return {
+          ...product,
+          image: toPublicProductImage(product),
+        };
+      }),
+    );
   } catch (error) {
     console.error("Get assignment products error:", error.message);
     return res.status(500).json({ error: "Unable to load assignment products" });
@@ -483,12 +508,21 @@ app.get("/api/analytics/product-clusters", requireAuth, async (_req, res) => {
   }
 });
 
-app.get("/api/products", requireAuth, async (_req, res) => {
+// Public, read-only Product API for the group aggregation task. All write
+// routes below still require an authenticated administrator.
+app.get("/api/products", async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT * FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
+      `SELECT id, name, category, price, stock, image, location, status, brand, sizes, productCode, lastUpdate FROM \`${inventoryTable}\` ORDER BY lastUpdate DESC`,
     );
-    return res.json(rows);
+    return res.json(
+      rows.map((product) => {
+        return {
+          ...product,
+          image: toPublicProductImage(product),
+        };
+      }),
+    );
   } catch (error) {
     console.error("Get products error:", error.message);
     return res.status(500).json({ error: "ไม่สามารถโหลดสินค้าได้" });
